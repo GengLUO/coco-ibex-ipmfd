@@ -49,6 +49,15 @@ module ibex_ex_block #(
     `ifdef ADDER_SECURE
     input logic adder_enable_i,
     `endif
+
+  // IPM
+  input ibex_pkg::ipm_op_e      ipm_operator_i, 
+  input logic                   ipm_en_i,
+  input logic                   ipm_sel_i,
+  input logic [31:0]            ipm_operand_a_i,
+  input logic [31:0]            ipm_operand_b_i,
+  input logic                   ipm_ready_id_i, //// Note for the two-stage configuration ready_wb_i is always set
+
     // intermediate val reg
     output logic                  imd_val_we_o,
     output logic [33:0]           imd_val_d_o,
@@ -65,13 +74,13 @@ module ibex_ex_block #(
 
   import ibex_pkg::*;
 
-  logic [31:0] alu_result, multdiv_result;
+  logic [31:0] alu_result, multdiv_result;      logic [31:0] ipm_result;
 
   logic [32:0] multdiv_alu_operand_b, multdiv_alu_operand_a;
   logic [33:0] alu_adder_result_ext;
   logic        alu_cmp_result, alu_is_equal_result;
-  logic        multdiv_valid;
-  logic        multdiv_sel;
+  logic        multdiv_valid;                   logic ipm_valid;
+  logic        multdiv_sel;                     logic ipm_sel;
   logic [31:0] alu_imd_val_d;
   logic        alu_imd_val_we;
   logic [33:0] multdiv_imd_val_d;
@@ -88,11 +97,13 @@ module ibex_ex_block #(
     assign multdiv_sel = 1'b0;
   end
 
+  assign ipm_sel = ipm_sel_i;
+
   // Intermediate Value Register Mux
   assign imd_val_d_o  = multdiv_sel ? multdiv_imd_val_d : {2'b0, alu_imd_val_d};
   assign imd_val_we_o = multdiv_sel ? multdiv_imd_val_we : alu_imd_val_we;
 
-  assign result_ex_o  = multdiv_sel ? multdiv_result : alu_result;
+  assign result_ex_o  = ipm_sel ? ipm_result : multdiv_sel ? multdiv_result : alu_result;
 
   // branch handling
   assign branch_decision_o  = alu_cmp_result;
@@ -237,9 +248,24 @@ module ibex_ex_block #(
     );
   end
 
+  ////////////////
+  // IPM Multiplier //
+  ////////////////
+  ipm ipm_i (
+        .clk_i(clk_i),
+        .rst_ni(rst_ni),
+        .ipm_operator_i(ipm_operator_i),
+        .a_i(ipm_operand_a_i),
+        .b_i(ipm_operand_b_i),
+        .ipm_en_i(ipm_en_i),
+        .ipm_sel_i(ipm_sel_i),
+        .result_o(ipm_result),
+        .valid_o(ipm_valid)
+    );
+
   // Multiplier/divider may require multiple cycles. The ALU output is valid in the same cycle
   // unless the intermediate result register is being written (which indicates this isn't the
   // final cycle of ALU operation).
-  assign ex_valid_o = multdiv_sel ? multdiv_valid : !alu_imd_val_we;
+  assign ex_valid_o = ipm_sel ? ipm_valid : multdiv_sel ? multdiv_valid : !alu_imd_val_we;
 
 endmodule

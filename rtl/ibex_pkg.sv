@@ -24,7 +24,8 @@ typedef enum logic [6:0] {
   OPCODE_BRANCH   = 7'h63,
   OPCODE_JALR     = 7'h67,
   OPCODE_JAL      = 7'h6f,
-  OPCODE_SYSTEM   = 7'h73
+  OPCODE_SYSTEM   = 7'h73,
+  OPCODE_IPM      = 7'h2B
 } opcode_e;
 
 
@@ -111,6 +112,14 @@ typedef enum logic [1:0] {
   MD_OP_DIV,
   MD_OP_REM
 } md_op_e;
+
+typedef enum logic [2:0] {
+    IPM_OP_MUL,
+    IPM_OP_SQUARE,
+    IPM_OP_HOMOG,
+    IPM_OP_MASK,
+    IPM_OP_UNMASK
+  } ipm_op_e;
 
 
 //////////////////////////////////

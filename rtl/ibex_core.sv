@@ -223,6 +223,14 @@ module ibex_core #(
   logic [31:0] multdiv_operand_b_ex;
   logic        multdiv_ready_id;
 
+  // IPM control
+  logic        ipm_en_ex;
+  logic        ipm_sel_ex;
+  ipm_op_e     ipm_operator_ex;
+  logic [31:0] ipm_operand_a_ex;
+  logic [31:0] ipm_operand_b_ex;
+  logic        ipm_ready_id;
+
   // CSR control
   logic        csr_access;
   csr_op_e     csr_op;
@@ -558,6 +566,14 @@ module ibex_core #(
       .multdiv_operand_b_ex_o       ( multdiv_operand_b_ex     ),
       .multdiv_ready_id_o           ( multdiv_ready_id         ),
 
+    .ipm_en_ex_o            (ipm_en_ex),
+    .ipm_sel_ex_o           (ipm_sel_ex),
+    .ipm_operator_ex_o   (ipm_operator_ex),
+    .ipm_operand_a_ex_o  (ipm_operand_a_ex),
+    .ipm_operand_b_ex_o  (ipm_operand_b_ex),
+    .ipm_ready_id_o      (ipm_ready_id),
+
+
       // CSR ID/EX
       .csr_access_o                 ( csr_access               ),
       .csr_op_o                     ( csr_op                   ),
@@ -692,6 +708,14 @@ module ibex_core #(
       `ifdef ADDER_SECURE
       .adder_enable_i           ( adder_enable ),
       `endif
+
+    // IPM signal from  ID stage
+    .ipm_operator_i       (ipm_operator_ex),
+    .ipm_en_i             (ipm_en_ex),
+    .ipm_sel_i            (ipm_sel_ex),
+    .ipm_operand_a_i      (ipm_operand_a_ex),
+    .ipm_operand_b_i      (ipm_operand_b_ex),
+    .ipm_ready_id_i       (ipm_ready_id),
 
       // Intermediate value register
       .imd_val_we_o             ( imd_val_we_ex            ),

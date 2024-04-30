@@ -21,11 +21,11 @@ module ibex_top (clk_sys, rst_sys_n,
   input [31:0] instr_wdata;
   `endif
   
-  // `ifdef MEM_SECURE
+  `ifdef MEM_SECURE
   parameter MEM_SIZE  = 8*1024; //8 * 1024; // 64 kB
   parameter MEM_START = 32'h00000000;
   parameter MEM_MASK  = MEM_SIZE-1;
-  // `endif
+  `endif
   
   // Instruction connection to SRAM
   wire        instr_req;

@@ -89,6 +89,14 @@ module ibex_id_stage #(
     output logic [31:0]               multdiv_operand_b_ex_o,
     output logic                      multdiv_ready_id_o,
 
+  // IPM
+  output logic                      ipm_en_ex_o,
+  output logic                      ipm_sel_ex_o,
+  output ibex_pkg::ipm_op_e         ipm_operator_ex_o,
+  output logic [31:0]               ipm_operand_a_ex_o,
+  output logic [31:0]               ipm_operand_b_ex_o,
+  output logic                      ipm_ready_id_o,
+
     // CSR
     output logic                      csr_access_o,
     output ibex_pkg::csr_op_e         csr_op_o,
@@ -214,6 +222,7 @@ module ibex_id_stage #(
   logic        stall_ld_hz;
   logic        stall_mem;
   logic        stall_multdiv;
+  logic        stall_ipm;
   logic        stall_branch;
   logic        stall_jump;
   logic        stall_id;
@@ -262,6 +271,10 @@ module ibex_id_stage #(
   logic        multdiv_en_dec;
   md_op_e      multdiv_operator;
   logic [1:0]  multdiv_signed_mode;
+
+  // IPM Control
+  logic        ipm_en_id, ipm_en_dec;
+  ipm_op_e     ipm_operator;
 
   // Data Memory Control
   logic        lsu_we;
@@ -461,6 +474,11 @@ module ibex_id_stage #(
       .multdiv_operator_o              ( multdiv_operator     ),
       .multdiv_signed_mode_o           ( multdiv_signed_mode  ),
 
+    // IPM
+    .ipm_en_o             (ipm_en_dec),
+    .ipm_sel_o            (ipm_sel_ex_o),
+    .ipm_operator_o       (ipm_operator),
+
       // CSRs
       .csr_access_o                    ( csr_access_o         ),
       .csr_op_o                        ( csr_op_o             ),
@@ -624,6 +642,15 @@ module ibex_id_stage #(
   assign multdiv_operand_a_ex_o      = rf_rdata_a_fwd;
   assign multdiv_operand_b_ex_o      = rf_rdata_b_fwd;
 
+  assign ipm_en_id      = instr_executing ? ipm_en_dec                     : 1'b0;
+
+  assign ipm_en_ex_o                 = ipm_en_id;
+
+  assign ipm_operator_ex_o        = ipm_operator;
+
+  assign ipm_operand_a_ex_o     = rf_rdata_a_fwd;
+  assign ipm_operand_b_ex_o     = rf_rdata_b_fwd;
+
   ////////////////////////
   // Branch set control //
   ////////////////////////
@@ -703,6 +730,7 @@ module ibex_id_stage #(
     id_fsm_d                = id_fsm_q;
     rf_we_raw               = rf_we_dec;
     stall_multdiv           = 1'b0;
+    stall_ipm       = 1'b0;
     stall_jump              = 1'b0;
     stall_branch            = 1'b0;
     stall_alu               = 1'b0;
@@ -734,6 +762,16 @@ module ibex_id_stage #(
                 stall_multdiv = 1'b1;
               end
             end
+            ipm_en_dec: begin
+              // IPM operation
+              if (~ex_valid_i) begin
+                // When single-cycle multiply is configured mul can finish in the first cycle so
+                // only enter MULTI_CYCLE state if a result isn't immediately available
+                id_fsm_d      = MULTI_CYCLE;
+                rf_we_raw     = 1'b0;
+                stall_ipm = 1'b1;
+              end
+            end
             branch_in_dec: begin
               // cond branch operation
               // All branches take two cycles in fixed time execution mode, regardless of branch
@@ -763,6 +801,9 @@ module ibex_id_stage #(
         end
 
         MULTI_CYCLE: begin
+          if(ipm_en_dec) begin
+            rf_we_raw = rf_we_dec & ex_valid_i;
+          end
           if(multdiv_en_dec) begin
             rf_we_raw       = rf_we_dec & ex_valid_i;
           end
@@ -771,6 +812,7 @@ module ibex_id_stage #(
             id_fsm_d        = FIRST_CYCLE;
           end else begin
             stall_multdiv   = multdiv_en_dec;
+            stall_ipm       = ipm_en_dec;
             stall_branch    = branch_in_dec;
             stall_jump      = jump_in_dec;
           end
@@ -786,10 +828,12 @@ module ibex_id_stage #(
   // Note for the two-stage configuration ready_wb_i is always set
   assign multdiv_ready_id_o = ready_wb_i;
 
+  assign ipm_ready_id_o     = ready_wb_i;
+
   `ASSERT(StallIDIfMulticycle, (id_fsm_q == FIRST_CYCLE) & (id_fsm_d == MULTI_CYCLE) |-> stall_id)
 
   // Stall ID/EX stage for reason that relates to instruction in ID/EX
-  assign stall_id = stall_ld_hz | stall_mem | stall_multdiv | stall_jump | stall_branch |
+  assign stall_id = stall_ld_hz | stall_mem | stall_multdiv | stall_ipm | stall_jump | stall_branch |
                       stall_alu;
 
   assign instr_done = ~stall_id & ~flush_id & instr_executing;

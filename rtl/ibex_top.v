@@ -8,24 +8,24 @@
 `endif
 
 module ibex_top (clk_sys, rst_sys_n, 
-                 `ifndef MEM_SECURE
+                 `ifdef MEM_SECURE
                  instr_we, instr_be, instr_wdata
                  `endif
 );
   // Inputs
   input clk_sys;
   input rst_sys_n;
-  `ifndef
+  `ifdef MEM_SECURE
   input instr_we;
   input [3:0] instr_be;
   input [31:0] instr_wdata;
   `endif
   
-  `ifdef MEM_SECURE
+  // `ifdef MEM_SECURE
   parameter MEM_SIZE  = 8*1024; //8 * 1024; // 64 kB
   parameter MEM_START = 32'h00000000;
   parameter MEM_MASK  = MEM_SIZE-1;
-  `endif
+  // `endif
   
   // Instruction connection to SRAM
   wire        instr_req;
@@ -129,7 +129,7 @@ module ibex_top (clk_sys, rst_sys_n,
     .wdata_i   ( data_wdata   ),
     .rvalid_o  ( data_rvalid  ),
     .rdata_o   ( data_rdata   ),
-    .gnt_o     (data_gnt      )
+    .gnt_o     ( data_gnt     )
   );
 
   rom_1p instr_rom (

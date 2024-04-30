@@ -88,10 +88,10 @@ module ibex_decoder #(
     output ibex_pkg::md_op_e     multdiv_operator_o,
     output logic [1:0]           multdiv_signed_mode_o,
 
-  // IPM
-  output logic                ipm_en_o,
-  output logic                ipm_sel_o,
-  output ibex_pkg::ipm_op_e   ipm_operator_o,
+    // IPM
+    output logic                ipm_en_o,
+    output logic                ipm_sel_o,
+    output ibex_pkg::ipm_op_e   ipm_operator_o,
 
     // CSRs
     output logic                 csr_access_o,          // access to CSR
@@ -120,7 +120,7 @@ module ibex_decoder #(
   logic [31:0] instr;
   logic [31:0] instr_alu;
 
-  logic [2:0] funct3；
+  logic [2:0] funct3;
   assign funct3 = instr[14:12];
 
   logic        use_rs3;

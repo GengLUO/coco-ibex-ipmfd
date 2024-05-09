@@ -1,6 +1,6 @@
 module ipm #(
-    parameter n = 5,
-    parameter k = 2
+    parameter n = 4,
+    parameter k = 1
 ) (
     input logic clk_i,
     input logic rst_ni,
@@ -19,8 +19,8 @@ module ipm #(
   localparam N = n - k + 1;
 
   //unpack the operands
-  logic [7:0] a[0:N-1];
-  logic [7:0] b[0:N-1];
+  logic [7:0] a[0:3];
+  logic [7:0] b[0:3];
 
   always_comb begin
     // for (int i = 0; i < N; i++) begin
@@ -57,29 +57,22 @@ module ipm #(
   // FSM
   ipm_state_e ipm_state_q, ipm_state_d;
 
-  // signal to indicate moving to next cell
-  logic move_q, move_d;
-
   // Loop indices
   logic [$clog2(N)-1:0] i_q, j_q, i_d, j_d;
-
-  logic [$clog2(N)-1:0] index_i, index_j;  //the true index to be performed on the matrix
-  assign index_i = move_q ? i_q : j_q;
-  assign index_j = move_q ? j_q : i_q;
 
   // multipliers
   /* verilator lint_off UNOPTFLAT */
   /* verilator lint_off IMPERFECTSCH */
-  logic [7:0] multiplier_inputs_a[0:2];
+  logic [7:0] multiplier_inputs_a[0:3];
   /* verilator lint_on UNOPTFLAT*/
   /* verilator lint_on IMPERFECTSCH */
-  logic [7:0] multiplier_inputs_b[0:2];
-  logic [7:0] multiplier_results[0:2];
+  logic [7:0] multiplier_inputs_b[0:3];
+  logic [7:0] multiplier_results[0:3];
 
   //registers to hold the multiplication intermediate values
-  logic [7:0] mult_result[0:N-1];
+  logic [7:0] mult_result[0:3];
 
-  logic [7:0] rest_result[0:N-1];
+  logic [7:0] rest_result[0:3];
 
   // for multiplication computations
   logic [7:0] T;
@@ -117,10 +110,16 @@ module ipm #(
   // SQ box //
   ////////////
   logic [7:0] sq_res_block[0:N-1];
+  logic [7:0] sq_in_block[0:N-1];
+  always_comb begin
+    for (int i = 0; i < N ; i++) begin
+      sq_in_block[i] = a[i];
+    end
+  end
   sq #(
       .N(N)
   ) sq_inst (
-      .sq_i(a),
+      .sq_i(sq_in_block),
       .sq_o(sq_res_block)
   );
 
@@ -159,6 +158,9 @@ module ipm #(
         ibex_pkg::IPM_OP_HOMOG: begin
           position_d = (position_q + 2 < $bits(position_d)'(k)) ? position_q + 1 : 0;
         end
+        ibex_pkg::IPM_OP_MUL_CONST: begin
+          position_d = 0;
+        end
         default: begin
           position_d = (position_q + 1 < $bits(position_d)'(k)) ? position_q + 1 : 0;
         end
@@ -185,7 +187,7 @@ module ipm #(
     mul_req_random = 0;
 
     if (operator == ibex_pkg::IPM_OP_MUL) begin
-      if (index_i < index_j) begin
+      if (i_q > j_q) begin
         mul_req_random = 1;
       end
     end
@@ -292,6 +294,11 @@ module ipm #(
       .rs2(multiplier_inputs_b[2]),
       .rd (multiplier_results[2])
   );
+  gfmul gfmul_inst_3 (
+      .rs1(multiplier_inputs_a[3]),
+      .rs2(multiplier_inputs_b[3]),
+      .rd (multiplier_results[3])
+  );
 
   // State transition and output logic
   always_ff @(posedge clk_i or negedge rst_ni) begin
@@ -299,7 +306,7 @@ module ipm #(
       ipm_state_q <= IDLE;
       i_q <= 0;
       j_q <= 0;
-      for (int i = 0; i < N; i++) begin
+      for (int i = 0; i < 4; i++) begin
         mult_result[i] <= 0;
       end
     end else if (ipm_en) begin
@@ -313,23 +320,23 @@ module ipm #(
   end
 
   always_comb begin
-    for (int i = 0; i < N; i++) begin
+    for (int i = 0; i < 4; i++) begin
       rest_result[i] = 0;
     end
     unique case (operator)
       ibex_pkg::IPM_OP_MUL: begin
         unique case (ipm_state_q)
           FIRST: begin
-            for (int i = 0; i < N; i++) begin
+            for (int i = 0; i < 4; i++) begin
               rest_result[i] = 0;
             end
             rest_result[0] = T ^ U;
           end
           COMPUTE, LAST: begin
-            for (int i = 0; i < N; i++) begin
+            for (int i = 0; i < 4; i++) begin
               rest_result[i] = mult_result[i];
             end
-            rest_result[index_i] = mult_result[index_i] ^ T ^ U;
+            rest_result[i_q] = mult_result[i_q] ^ T ^ U;
           end
           default: ;
         endcase
@@ -349,13 +356,18 @@ module ipm #(
       ibex_pkg::IPM_OP_MASK: begin
         rest_result[0] = a[0] ^ multiplier_results[0] ^ multiplier_results[1] ^ multiplier_results[2];
         for (int i = 1; i < N; i++) begin
-          rest_result[i]   = random_mask_temp_q[i-1];
-          rest_result[N-1] = prng;
+          rest_result[i] = random_mask_temp_q[i-1];
           // rest_result[i] = random[0][i];
         end
+        rest_result[N-1] = prng;
       end
       ibex_pkg::IPM_OP_UNMASK: begin
         rest_result[0] = a[0] ^ multiplier_results[0] ^ multiplier_results[1] ^ multiplier_results[2];
+      end
+      ibex_pkg::IPM_OP_MUL_CONST: begin
+        for (int i = 0; i < N; i++) begin
+          rest_result[i] = multiplier_results[i];
+        end
       end
       default: ;
     endcase
@@ -377,7 +389,7 @@ module ipm #(
           ibex_pkg::IPM_OP_MASK: begin
             ipm_state_d = (i_d == $bits(i_d)'(0) && j_d == $bits(j_d)'(0)) ? FIRST : COMPUTE;
           end
-          ibex_pkg::IPM_OP_HOMOG, ibex_pkg::IPM_OP_SQUARE, ibex_pkg::IPM_OP_UNMASK: begin
+          ibex_pkg::IPM_OP_HOMOG, ibex_pkg::IPM_OP_SQUARE, ibex_pkg::IPM_OP_UNMASK, ibex_pkg::IPM_OP_MUL_CONST: begin
             ipm_state_d = FIRST;  //require 0 cycle, can already get the result
           end
           default: ;
@@ -399,37 +411,7 @@ module ipm #(
       LAST: begin
         ipm_state_d = FIRST;
       end
-      // DONE: ipm_state_d = FIRST;
       default: ipm_state_d = IDLE;
-    endcase
-  end
-
-  always_ff @(posedge clk_i or negedge rst_ni) begin : move_signal
-    if (!rst_ni) begin
-      move_q <= 0;
-    end else if (ipm_en) begin
-      move_q <= move_d;
-    end
-  end
-
-  always_comb begin
-    move_d = 1;
-
-    unique case (operator)
-      ibex_pkg::IPM_OP_MUL: begin
-        // if (ipm_en) begin
-        if (i_d == j_d) begin  // next cell is at the diagonal, U_prime is 0, need random data for T
-          move_d = 1;  //need to 'MOVE'
-        end else begin  //next cell is not at the diagonal
-          if (move_q) begin  // toggle the request
-            move_d = 0;
-          end else begin
-            move_d = 1;
-          end
-        end
-      end
-      // end
-      default: ;
     endcase
   end
 
@@ -438,7 +420,7 @@ module ipm #(
   end
 
   always_comb begin
-    for (int i = 0; i < 3; i++) begin
+    for (int i = 0; i < 4; i++) begin
       multiplier_inputs_a[i] = 0;
       multiplier_inputs_b[i] = 0;
     end
@@ -447,42 +429,79 @@ module ipm #(
 
     unique case (operator)
       ibex_pkg::IPM_OP_MUL: begin
-        multiplier_inputs_a[0] = a[index_i];
-        multiplier_inputs_b[0] = b[index_j];
+        multiplier_inputs_a[0] = a[i_q];
+        multiplier_inputs_b[0] = b[j_q];
 
         multiplier_inputs_a[1] = multiplier_results[0];
-        multiplier_inputs_b[1] = L_prime[index_j];
+        multiplier_inputs_b[1] = L_prime[j_q];
         T = multiplier_results[1];
 
         multiplier_inputs_a[2] = U_prime;
-        multiplier_inputs_b[2] = L_prime_inv[index_i];
+        multiplier_inputs_b[2] = L_prime_inv[i_q];
         U = multiplier_results[2];
       end
       ibex_pkg::IPM_OP_MASK: begin
         for (int i = 0; i < 3; i++) begin
           // multiplier_inputs_a[i] = random[i];
-          if (i < 2) multiplier_inputs_a[i] = random_mask_temp_q[i];
-          else multiplier_inputs_a[i] = prng;
+          if (i < N - 2) begin
+            multiplier_inputs_a[i] = random_mask_temp_q[i];
+          end else if (i == N - 2) begin
+            multiplier_inputs_a[i] = prng;
+          end else begin
+            multiplier_inputs_a[i] = 0;
+          end
           // multiplier_inputs_a[i] = random[0][i+1];
-          multiplier_inputs_b[i] = L_prime[i+1];
+
+          if (i < N - 1) begin
+            multiplier_inputs_b[i] = L_prime[i+1];
+          end
+          else begin
+            multiplier_inputs_b[i] = 0;
+          end
         end
       end
       ibex_pkg::IPM_OP_HOMOG: begin
         for (int i = 0; i < 3; i++) begin
-          multiplier_inputs_a[i] = L_prime[i+1];
+          if (i < N - 1) begin
+            multiplier_inputs_a[i] = L_prime[i+1];
+          end
+          else begin
+            multiplier_inputs_a[i] = 0;
+          end
+
+          
           multiplier_inputs_b[i] = a[i+1] ^ b[i+1];
         end
       end
       ibex_pkg::IPM_OP_SQUARE: begin
         for (int i = 0; i < 3; i++) begin
-          multiplier_inputs_a[i] = sq_res_block[i+1];
-          multiplier_inputs_b[i] = L_prime[i+1];
+          if (i < N - 1) begin
+            multiplier_inputs_a[i] = sq_res_block[i+1];
+            multiplier_inputs_b[i] = L_prime[i+1];
+          end
+          else begin
+            multiplier_inputs_a[i] = 0;
+            multiplier_inputs_b[i] = 0;
+          end
+          
         end
       end
       ibex_pkg::IPM_OP_UNMASK: begin
         for (int i = 0; i < 3; i++) begin
           multiplier_inputs_a[i] = a[i+1];
-          multiplier_inputs_b[i] = L_prime[i+1];
+          
+          if (i < N - 1) begin
+            multiplier_inputs_b[i] = L_prime[i+1];
+          end
+          else begin
+            multiplier_inputs_b[i] = 0;
+          end
+        end
+      end
+      ibex_pkg::IPM_OP_MUL_CONST: begin
+        for (int i = 0; i < 4; i++) begin
+          multiplier_inputs_a[i] = a[i];
+          multiplier_inputs_b[i] = b[0];
         end
       end
       default: ;
@@ -499,7 +518,10 @@ module ipm #(
         //which means MUL or MASK is computing
         if (ipm_state_q != IDLE && ipm_state_q != LAST) begin
           //move_q == signal to indicate 'MOVE'
-          if (move_q) begin : move_index
+          if (j_q > i_q) begin
+            i_d = j_q;
+            j_d = i_q;
+          end else if (i_q == j_q) begin
             if (j_q < $bits(j_q)'(N - 1)) begin : move_right
               i_d = i_q;
               j_d = j_q + 1;  //continue to the right cell
@@ -507,9 +529,14 @@ module ipm #(
               i_d = i_q + 1;  // go to next row
               j_d = i_d;  // j starts from the diagonal
             end
-          end else begin : stay_index  //i and j do not change
-            i_d = i_q;
-            j_d = j_q;
+          end else begin  //i_q > j_q, in the mirrored region
+            if (i_q < $bits(i_q)'(N - 1)) begin : mirror_and_move_right
+              i_d = j_q;
+              j_d = i_q + 1;
+            end else begin : next_one_on_the_diagonal
+              i_d = j_q + 1;
+              j_d = j_q + 1;
+            end
           end
         end else if (ipm_state_q == LAST) begin : last_cycle_clear_index
           i_d = 0;
@@ -555,7 +582,7 @@ module ipm #(
           valid_o = 0;
         end
       end
-      ibex_pkg::IPM_OP_SQUARE, ibex_pkg::IPM_OP_HOMOG, ibex_pkg::IPM_OP_UNMASK: begin
+      ibex_pkg::IPM_OP_SQUARE, ibex_pkg::IPM_OP_HOMOG, ibex_pkg::IPM_OP_UNMASK, ibex_pkg::IPM_OP_MUL_CONST: begin
         valid_o = ipm_state_q == FIRST;
       end
       default: ;

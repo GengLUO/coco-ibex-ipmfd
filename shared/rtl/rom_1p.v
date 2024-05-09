@@ -23,10 +23,13 @@ module rom_1p (
     output        rvalid_o;
     output  [31:0] rdata_o;
 
-  localparam Depth = 256;
+  //TODO: For aes_sbox, change to 8KB
+  localparam Depth = 256 * 8;
   localparam Aw = $clog2(Depth);
   
   (* keep *) reg [31:0] mem [Depth-1:0];
+  //8192 bits -> 1 KB
+  //TODO: For aes_sbox, change to 8KB
 
   wire [Aw-1:0] addr_idx;
   assign addr_idx = addr_i[Aw-1+2:2];
